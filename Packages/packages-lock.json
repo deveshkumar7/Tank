@@ -1,5 +1,11 @@
 {
   "dependencies": {
+    "com.unity.2d.sprite": {
+      "version": "1.0.0",
+      "depth": 0,
+      "source": "builtin",
+      "dependencies": {}
+    },
     "com.unity.ai.navigation": {
       "version": "1.1.7",
       "depth": 0,
@@ -267,7 +273,7 @@
     },
     "com.unity.visualeffectgraph": {
       "version": "14.0.12",
-      "depth": 1,
+      "depth": 0,
       "source": "builtin",
       "dependencies": {
         "com.unity.shadergraph": "14.0.12",

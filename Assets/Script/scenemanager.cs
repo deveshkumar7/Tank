@@ -19,6 +19,13 @@ public class SceneController : MonoBehaviour
         }
     }
 
+    // Reload the current scene from start
+    public void ReloadScene()
+    {
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+
+
+    }
     // Exit the game
     public void ExitGame()
     {

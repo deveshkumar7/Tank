@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using TMPro;
+using UnityEngine.UI;
 
 public class AITankFSM : MonoBehaviour
 {
@@ -84,8 +86,22 @@ public class AITankFSM : MonoBehaviour
     private float currentTurnSpeed;
     private bool isSharpTurning;
 
+
+    [Header("Health Settings")]
+    public float maxHealth = 100f;
+    private float currentHealth;
+
+    [Header("UI References")]
+    public Image healthBarFill; // The health bar fill image
+    public Image reloadBarFill; // The ammo/reload bar fill image
+
+
     void Start()
     {
+        //health UI
+        currentHealth = maxHealth;
+        UpdateHealthUI();
+
         navAgent = GetComponent<NavMeshAgent>();
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
         patrolCenter = transform.position;
@@ -96,6 +112,9 @@ public class AITankFSM : MonoBehaviour
         isReloading = false;
         potentialCoverPoints = new List<Vector3>();
 
+        // Initialize UI
+        UpdateAmmoReloadUI();
+
         // Configure NavMeshAgent
         navAgent.speed = moveSpeed;
         navAgent.angularSpeed = rotationSpeed;
@@ -103,6 +122,61 @@ public class AITankFSM : MonoBehaviour
         navAgent.stoppingDistance = 0.5f;
 
         SetNewPatrolPoint();
+    }
+
+    public void TakeDamage(float amount)
+    {
+        currentHealth -= amount;
+        currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
+        UpdateHealthUI();
+
+        if (currentHealth <= 0)
+        {
+            DestroyTank();
+        }
+    }
+
+    void DestroyTank()
+    {
+        // Add score when tank is destroyed
+        ScoreManager scoreManager = FindObjectOfType<ScoreManager>();
+        if (scoreManager != null)
+        {
+            scoreManager.AddScore(10);
+            Debug.Log("Tank destroyed! Added 10 points to score.");
+        }
+        else
+        {
+            Debug.LogWarning("ScoreManager not found! Could not add score.");
+        }
+
+        // Destroy the tank GameObject
+        Destroy(gameObject);
+    }
+
+    void UpdateHealthUI()
+    {
+        if (healthBarFill != null)
+            healthBarFill.fillAmount = currentHealth / maxHealth;
+    }
+
+    void UpdateAmmoReloadUI()
+    {
+        if (reloadBarFill != null)
+        {
+            if (isReloading)
+            {
+                // During reload, show reload progress (0 to 1)
+                float reloadProgress = 1f - (reloadTimer / reloadTime);
+                reloadBarFill.fillAmount = reloadProgress;
+            }
+            else
+            {
+                // When not reloading, show current ammo percentage
+                float ammoPercentage = (float)currentAmmo / maxAmmo;
+                reloadBarFill.fillAmount = ammoPercentage;
+            }
+        }
     }
 
     void Update()
@@ -128,6 +202,7 @@ public class AITankFSM : MonoBehaviour
         if (isReloading)
         {
             reloadTimer -= Time.deltaTime;
+
             if (reloadTimer <= 0f)
             {
                 isReloading = false;
@@ -135,7 +210,11 @@ public class AITankFSM : MonoBehaviour
                 Debug.Log("Tank reloaded!");
             }
         }
+
+        // Always update the UI (handles both ammo display and reload progress)
+        UpdateAmmoReloadUI();
     }
+
 
     void UpdateFSM()
     {
@@ -579,6 +658,7 @@ public class AITankFSM : MonoBehaviour
         Debug.Log("Tank is reloading...");
     }
 
+
     void UpdateTurningBehavior()
     {
         if (navAgent.hasPath && navAgent.path.corners.Length > 1)
@@ -682,8 +762,10 @@ public class AITankFSM : MonoBehaviour
                 bulletRb.velocity = firePoint.forward * bulletSpeed;
             }
 
-            // Decrease ammo
+            // Decrease ammo and update UI immediately
             currentAmmo--;
+            UpdateAmmoReloadUI(); // Update the bar immediately when firing
+
             Debug.Log($"Tank fired! Ammo remaining: {currentAmmo}");
 
             // Destroy bullet after some time
