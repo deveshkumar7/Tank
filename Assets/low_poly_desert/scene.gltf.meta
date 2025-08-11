@@ -1,0 +1,166 @@
+fileFormatVersion: 2
+guid: b8d107190cf39844a89279d67b541e1d
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 715df9372183c47e389bb6e19fbc3b52, type: 3}
+  editorImportSettings:
+    generateSecondaryUVSet: 0
+  importSettings:
+    nodeNameMethod: 1
+    animationMethod: 2
+    generateMipMaps: 1
+    texturesReadable: 0
+    defaultMinFilterMode: 9729
+    defaultMagFilterMode: 9729
+    anisotropicFilterLevel: 1
+  instantiationSettings:
+    mask: -1
+    layer: 0
+    skinUpdateWhenOffscreen: 1
+    lightIntensityFactor: 1
+    sceneObjectCreation: 2
+  assetDependencies:
+  - type: 0
+    originalUri: Assets\low_poly_desert\scene.bin
+    assetPath: Assets\low_poly_desert\scene.bin
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\KYST_01_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\KYST_01_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\KYST_01_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\KYST_01_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\KYST_01_normal.png
+    assetPath: Assets\low_poly_desert\textures\KYST_01_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\CLOUDS_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\CLOUDS_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\CLOUDS_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\CLOUDS_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\CLOUDS_normal.png
+    assetPath: Assets\low_poly_desert\textures\CLOUDS_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\THREE_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\THREE_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\THREE_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\THREE_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\THREE_normal.png
+    assetPath: Assets\low_poly_desert\textures\THREE_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\GRASS_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\GRASS_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\GRASS_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\GRASS_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\GRASS_normal.png
+    assetPath: Assets\low_poly_desert\textures\GRASS_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\KYST_02_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\KYST_02_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\KYST_02_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\KYST_02_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\KYST_02_normal.png
+    assetPath: Assets\low_poly_desert\textures\KYST_02_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WIGWAM_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\WIGWAM_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WIGWAM_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\WIGWAM_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WIGWAM_normal.png
+    assetPath: Assets\low_poly_desert\textures\WIGWAM_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\BEAMS_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\BEAMS_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\BEAMS_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\BEAMS_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\BEAMS_normal.png
+    assetPath: Assets\low_poly_desert\textures\BEAMS_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WATER_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\WATER_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WATER_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\WATER_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WATER_normal.png
+    assetPath: Assets\low_poly_desert\textures\WATER_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\RED_CLOTH_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\RED_CLOTH_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\RED_CLOTH_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\RED_CLOTH_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\RED_CLOTH_normal.png
+    assetPath: Assets\low_poly_desert\textures\RED_CLOTH_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\YELLOW_CLOTH_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\YELLOW_CLOTH_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\YELLOW_CLOTH_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\YELLOW_CLOTH_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\YELLOW_CLOTH_normal.png
+    assetPath: Assets\low_poly_desert\textures\YELLOW_CLOTH_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WHITE_CLOTH_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\WHITE_CLOTH_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WHITE_CLOTH_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\WHITE_CLOTH_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\WHITE_CLOTH_normal.png
+    assetPath: Assets\low_poly_desert\textures\WHITE_CLOTH_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROCKS_SMALL_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\ROCKS_SMALL_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROCKS_SMALL_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\ROCKS_SMALL_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROCKS_SMALL_normal.png
+    assetPath: Assets\low_poly_desert\textures\ROCKS_SMALL_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROCKS_BIG_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\ROCKS_BIG_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROCKS_BIG_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\ROCKS_BIG_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROCKS_BIG_normal.png
+    assetPath: Assets\low_poly_desert\textures\ROCKS_BIG_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROAD_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\ROAD_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROAD_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\ROAD_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\ROAD_normal.png
+    assetPath: Assets\low_poly_desert\textures\ROAD_normal.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\GROUND_baseColor.jpeg
+    assetPath: Assets\low_poly_desert\textures\GROUND_baseColor.jpeg
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\GROUND_metallicRoughness.png
+    assetPath: Assets\low_poly_desert\textures\GROUND_metallicRoughness.png
+  - type: 1
+    originalUri: Assets\low_poly_desert\textures\GROUND_normal.png
+    assetPath: Assets\low_poly_desert\textures\GROUND_normal.png
+  reportItems: []

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class AITankFSM : MonoBehaviour
 {
@@ -11,19 +12,35 @@ public class AITankFSM : MonoBehaviour
     public GameObject[] rightWheels;
     public float wheelRotationSpeed = 200.0f;
 
+    [Header("Turn Settings")]
+    public float sharpTurnAngle = 40.0f;
+    public float slowTurnSpeedMultiplier = 0.3f;
+
     [Header("AI Settings")]
     public float detectionRange = 10.0f;
     public float attackRange = 5.0f;
     public float patrolRadius = 8.0f;
     public float patrolWaitTime = 2.0f;
     public float chaseSpeed = 4.0f;
+    public float fleeSpeed = 5.0f;
     public float turnSpeed = 2.0f;
 
     [Header("Combat Settings")]
     public GameObject bulletPrefab;
     public Transform firePoint;
-    public float fireRate = 1.0f;
+    public float timeBetweenBullets = 1.0f;
     public float bulletSpeed = 10.0f;
+    public int maxAmmo = 5;
+    public float reloadTime = 3.0f;
+
+    [Header("Flee Settings")]
+    public float fleeDistance = 15.0f;
+    public float fleeTime = 5.0f;
+    public LayerMask obstacleLayerMask = -1;
+    public float coverSearchRadius = 20.0f;
+    public int coverSearchPoints = 16;
+    public float minCoverDistance = 3.0f;
+    public float edgeAvoidanceRadius = 2.0f;
 
     // FSM States
     public enum AIState
@@ -31,48 +48,93 @@ public class AITankFSM : MonoBehaviour
         Patrol,
         Chase,
         Attack,
-        SearchPlayer
+        Flee
     }
 
     // Private variables
     private AIState currentState;
-    private Rigidbody rb;
+    private NavMeshAgent navAgent;
     private Transform player;
     private Vector3 patrolCenter;
     private Vector3 targetPatrolPoint;
     private float lastFireTime;
     private float patrolWaitTimer;
-    private float searchTimer;
     private float lastKnownPlayerTime;
     private Vector3 lastKnownPlayerPosition;
 
-    // Movement inputs (similar to player script)
-    private float moveInput;
-    private float rotationInput;
+    // Combat variables
+    private int currentAmmo;
+    private bool isReloading;
+    private float reloadTimer;
+
+    // Flee variables
+    private float fleeTimer;
+    private Vector3 fleeTarget;
+    private bool hasFoundCover;
+    private List<Vector3> potentialCoverPoints;
+
+    // Cover system cache
+    private float lastCoverSearchTime;
+    private float coverSearchCooldown = 2.0f;
+
+    // Movement tracking for realistic wheel rotation
+    private Vector3 lastPosition;
+    private float lastRotationY;
+    private float currentForwardSpeed;
+    private float currentTurnSpeed;
+    private bool isSharpTurning;
 
     void Start()
     {
-        rb = GetComponent<Rigidbody>();
+        navAgent = GetComponent<NavMeshAgent>();
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
         patrolCenter = transform.position;
         currentState = AIState.Patrol;
+        lastPosition = transform.position;
+        lastRotationY = transform.eulerAngles.y;
+        currentAmmo = maxAmmo;
+        isReloading = false;
+        potentialCoverPoints = new List<Vector3>();
+
+        // Configure NavMeshAgent
+        navAgent.speed = moveSpeed;
+        navAgent.angularSpeed = rotationSpeed;
+        navAgent.acceleration = 8.0f;
+        navAgent.stoppingDistance = 0.5f;
+
         SetNewPatrolPoint();
     }
 
     void Update()
     {
+        // Update reload timer
+        UpdateReload();
+
         // Update FSM
         UpdateFSM();
 
-        // Rotate wheels based on current movement inputs
-        RotateWheels(moveInput, rotationInput);
+        // Check for sharp turning and adjust speed
+        UpdateTurningBehavior();
+
+        // Calculate realistic movement for wheel rotation
+        CalculateRealisticMovement();
+
+        // Rotate wheels based on calculated movement
+        RotateWheelsRealistically();
     }
 
-    void FixedUpdate()
+    void UpdateReload()
     {
-        // Apply movement using the same system as player
-        MoveTankObj(moveInput);
-        RotateTank(rotationInput);
+        if (isReloading)
+        {
+            reloadTimer -= Time.deltaTime;
+            if (reloadTimer <= 0f)
+            {
+                isReloading = false;
+                currentAmmo = maxAmmo;
+                Debug.Log("Tank reloaded!");
+            }
+        }
     }
 
     void UpdateFSM()
@@ -88,14 +150,22 @@ public class AITankFSM : MonoBehaviour
             case AIState.Attack:
                 AttackBehavior();
                 break;
-            case AIState.SearchPlayer:
-                SearchBehavior();
+            case AIState.Flee:
+                FleeBehavior();
                 break;
         }
     }
 
     void PatrolBehavior()
     {
+        // Check if out of ammo and need to flee (priority check)
+        if (currentAmmo <= 0 && !isReloading)
+        {
+            StartReload();
+            ChangeState(AIState.Flee);
+            return;
+        }
+
         // Check for player detection
         if (CanSeePlayer())
         {
@@ -110,14 +180,14 @@ public class AITankFSM : MonoBehaviour
 
         if (distanceToPatrol > 1.0f)
         {
-            MoveTowardsTarget(targetPatrolPoint);
+            navAgent.SetDestination(targetPatrolPoint);
+            navAgent.isStopped = false;
         }
         else
         {
             // Reached patrol point, wait then set new one
+            navAgent.isStopped = true;
             patrolWaitTimer += Time.deltaTime;
-            moveInput = 0f;
-            rotationInput = 0f;
 
             if (patrolWaitTimer >= patrolWaitTime)
             {
@@ -129,10 +199,18 @@ public class AITankFSM : MonoBehaviour
 
     void ChaseBehavior()
     {
+        // Check if out of ammo and need to flee (priority check)
+        if (currentAmmo <= 0 && !isReloading)
+        {
+            StartReload();
+            ChangeState(AIState.Flee);
+            return;
+        }
+
         if (!CanSeePlayer())
         {
-            // Lost sight of player, start searching
-            ChangeState(AIState.SearchPlayer);
+            // Lost sight of player, continue patrolling
+            ChangeState(AIState.Patrol);
             return;
         }
 
@@ -148,18 +226,27 @@ public class AITankFSM : MonoBehaviour
         }
 
         // Chase the player
-        MoveTowardsTarget(player.position);
+        navAgent.SetDestination(player.position);
+        navAgent.isStopped = false;
     }
 
     void AttackBehavior()
     {
-        if (!CanSeePlayer())
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+
+        // Check if out of ammo and need to flee (regardless of player visibility)
+        if (currentAmmo <= 0 && !isReloading)
         {
-            ChangeState(AIState.SearchPlayer);
+            StartReload();
+            ChangeState(AIState.Flee);
             return;
         }
 
-        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+        if (!CanSeePlayer())
+        {
+            ChangeState(AIState.Patrol);
+            return;
+        }
 
         if (distanceToPlayer > attackRange)
         {
@@ -168,97 +255,400 @@ public class AITankFSM : MonoBehaviour
         }
 
         // Stop moving and focus on attacking
-        moveInput = 0f;
+        navAgent.isStopped = true;
 
-        // Rotate to face player
+        // Rotate to face player smoothly
         RotateTowardsTarget(player.position);
 
-        // Fire at player
-        if (Time.time - lastFireTime >= 1.0f / fireRate)
+        // Fire at player if not reloading and has ammo
+        if (!isReloading && currentAmmo > 0 && Time.time - lastFireTime >= timeBetweenBullets)
         {
             FireAtPlayer();
             lastFireTime = Time.time;
         }
     }
 
-    void SearchBehavior()
+    void FleeBehavior()
     {
-        searchTimer += Time.deltaTime;
+        fleeTimer += Time.deltaTime;
 
-        // Check if we can see the player again
-        if (CanSeePlayer())
+        // Try to find cover if we haven't found it yet or need to update
+        if (!hasFoundCover || Time.time - lastCoverSearchTime > coverSearchCooldown)
         {
-            ChangeState(AIState.Chase);
-            return;
+            Vector3 bestCoverPoint = FindBestCoverPoint();
+            if (bestCoverPoint != Vector3.zero)
+            {
+                fleeTarget = bestCoverPoint;
+                hasFoundCover = true;
+                lastCoverSearchTime = Time.time;
+                Debug.Log("Tank found cover behind obstacle!");
+            }
+            else
+            {
+                // Fallback: move away from player if no cover found
+                FleeDirectlyFromPlayer();
+            }
         }
 
-        // Move to last known position
-        float distanceToLastKnown = Vector3.Distance(transform.position, lastKnownPlayerPosition);
-
-        if (distanceToLastKnown > 1.0f)
+        // Move to cover position
+        if (Vector3.Distance(transform.position, fleeTarget) > 1.5f)
         {
-            MoveTowardsTarget(lastKnownPlayerPosition);
+            navAgent.SetDestination(fleeTarget);
+            navAgent.isStopped = false;
         }
         else
         {
-            // Reached last known position, look around
-            rotationInput = 0.5f;
-            moveInput = 0f;
+            // Reached cover, stop and hide
+            navAgent.isStopped = true;
+
+            // Face away from player while hiding (more realistic)
+            if (player != null)
+            {
+                Vector3 hideDirection = (transform.position - player.position).normalized;
+                Vector3 lookDirection = transform.position + hideDirection;
+                RotateTowardsTarget(lookDirection);
+            }
         }
 
-        // Give up searching after some time
-        if (searchTimer >= 5.0f)
+        // Return to patrol after reload is complete
+        if (!isReloading && currentAmmo > 0)
         {
-            searchTimer = 0f;
+            fleeTimer = 0f;
+            hasFoundCover = false;
             ChangeState(AIState.Patrol);
         }
     }
 
-    void MoveTowardsTarget(Vector3 targetPosition)
+    void FleeDirectlyFromPlayer()
     {
-        Vector3 direction = (targetPosition - transform.position).normalized;
-        float dot = Vector3.Dot(transform.forward, direction);
-
-        // Calculate rotation needed
-        Vector3 cross = Vector3.Cross(transform.forward, direction);
-        float rotationDirection = cross.y > 0 ? 1 : -1;
-
-        // Set movement inputs
-        if (dot > 0.7f) // Moving roughly forward
+        if (player != null)
         {
-            moveInput = 1.0f;
-            rotationInput = rotationDirection * (1.0f - dot) * turnSpeed;
+            // Always use current player position
+            Vector3 fleeDirection = (transform.position - player.position).normalized;
+            Vector3 fleePosition = transform.position + fleeDirection * fleeDistance;
+
+            // Find valid NavMesh position away from edges
+            Vector3 safeFleePosition = FindSafeNavMeshPosition(fleePosition, fleeDistance);
+
+            if (safeFleePosition != Vector3.zero)
+            {
+                fleeTarget = safeFleePosition;
+            }
+            else
+            {
+                // If can't find safe position, try multiple directions
+                for (int i = 0; i < 12; i++)
+                {
+                    float angle = i * 30f * Mathf.Deg2Rad;
+                    Vector3 searchDirection = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+                    Vector3 testPosition = transform.position + searchDirection * fleeDistance;
+
+                    Vector3 testSafePosition = FindSafeNavMeshPosition(testPosition, fleeDistance * 0.5f);
+                    if (testSafePosition != Vector3.zero)
+                    {
+                        fleeTarget = testSafePosition;
+                        break;
+                    }
+                }
+            }
         }
-        else if (dot < -0.7f) // Need to turn around
+    }
+
+    Vector3 FindBestCoverPoint()
+    {
+        if (player == null) return Vector3.zero;
+
+        Vector3 bestCoverPoint = Vector3.zero;
+        float bestScore = -1f;
+
+        // Always use current player position for fleeing
+        Vector3 currentPlayerPosition = player.position;
+
+        // Generate potential cover points in a circle around the tank
+        for (int i = 0; i < coverSearchPoints; i++)
         {
-            moveInput = -0.3f; // Back up a bit
-            rotationInput = rotationDirection * turnSpeed;
-        }
-        else // Need to turn
-        {
-            moveInput = 0.3f;
-            rotationInput = rotationDirection * turnSpeed;
+            float angle = i * (360f / coverSearchPoints) * Mathf.Deg2Rad;
+            Vector3 searchDirection = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+            Vector3 searchPoint = transform.position + searchDirection * coverSearchRadius;
+
+            // Find valid NavMesh position with edge avoidance
+            NavMeshHit navHit;
+            Vector3 validCoverPoint = FindSafeNavMeshPosition(searchPoint, coverSearchRadius);
+
+            if (validCoverPoint == Vector3.zero)
+                continue;
+
+            // Skip if too close to current position
+            if (Vector3.Distance(transform.position, validCoverPoint) < minCoverDistance)
+                continue;
+
+            // Check if this point provides cover from current player position
+            float coverScore = EvaluateCoverPoint(validCoverPoint, currentPlayerPosition);
+
+            if (coverScore > bestScore)
+            {
+                bestScore = coverScore;
+                bestCoverPoint = validCoverPoint;
+            }
         }
 
-        // Clamp inputs
-        moveInput = Mathf.Clamp(moveInput, -1f, 1f);
-        rotationInput = Mathf.Clamp(rotationInput, -1f, 1f);
+        // If no good cover found, try raycasting to find obstacles
+        if (bestScore < 0.1f)
+        {
+            return FindCoverBehindObstacles(currentPlayerPosition);
+        }
+
+        return bestCoverPoint;
+    }
+
+    Vector3 FindCoverBehindObstacles(Vector3 threatPosition)
+    {
+        // Cast rays in multiple directions to find obstacles
+        Vector3 threatDirection = (threatPosition - transform.position).normalized;
+
+        for (int i = 0; i < 8; i++)
+        {
+            // Create perpendicular directions to threat
+            float angle = i * 45f * Mathf.Deg2Rad;
+            Vector3 sideDirection = new Vector3(
+                threatDirection.z * Mathf.Cos(angle) - threatDirection.x * Mathf.Sin(angle),
+                0,
+                threatDirection.x * Mathf.Cos(angle) + threatDirection.z * Mathf.Sin(angle)
+            );
+
+            RaycastHit hit;
+            Vector3 rayStart = transform.position + Vector3.up * 0.5f;
+
+            // Cast ray to find obstacle
+            if (Physics.Raycast(rayStart, sideDirection, out hit, coverSearchRadius, obstacleLayerMask))
+            {
+                // Find position behind the obstacle
+                Vector3 behindObstacle = hit.point + hit.normal * 2f;
+
+                // Use safe NavMesh position finding
+                Vector3 safeCoverPoint = FindSafeNavMeshPosition(behindObstacle, 3f);
+
+                if (safeCoverPoint != Vector3.zero)
+                {
+                    // Verify this position provides cover
+                    if (!HasLineOfSightToPosition(safeCoverPoint, threatPosition))
+                    {
+                        return safeCoverPoint;
+                    }
+                }
+            }
+        }
+
+        return Vector3.zero;
+    }
+
+    Vector3 FindSafeNavMeshPosition(Vector3 targetPosition, float searchRadius)
+    {
+        NavMeshHit navHit;
+
+        // First try to find any valid NavMesh position
+        if (!NavMesh.SamplePosition(targetPosition, out navHit, searchRadius, NavMesh.AllAreas))
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 candidatePosition = navHit.position;
+
+        // Check if this position is too close to NavMesh edges
+        if (!IsPositionAwayFromEdges(candidatePosition))
+        {
+            // Try to find a better position away from edges
+            Vector3 betterPosition = FindPositionAwayFromEdges(candidatePosition, searchRadius);
+            if (betterPosition != Vector3.zero)
+            {
+                return betterPosition;
+            }
+        }
+
+        return candidatePosition;
+    }
+
+    bool IsPositionAwayFromEdges(Vector3 position)
+    {
+        // Check in 8 directions around the position
+        for (int i = 0; i < 8; i++)
+        {
+            float angle = i * 45f * Mathf.Deg2Rad;
+            Vector3 direction = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+            Vector3 checkPoint = position + direction * edgeAvoidanceRadius;
+
+            NavMeshHit hit;
+            // If we can't find NavMesh nearby, we're too close to an edge
+            if (!NavMesh.SamplePosition(checkPoint, out hit, 1f, NavMesh.AllAreas))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    Vector3 FindPositionAwayFromEdges(Vector3 originalPosition, float searchRadius)
+    {
+        // Try multiple positions in a spiral pattern to find one away from edges
+        for (float radius = 2f; radius <= searchRadius; radius += 1f)
+        {
+            for (int i = 0; i < 12; i++)
+            {
+                float angle = i * 30f * Mathf.Deg2Rad;
+                Vector3 testDirection = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+                Vector3 testPosition = originalPosition + testDirection * radius;
+
+                NavMeshHit hit;
+                if (NavMesh.SamplePosition(testPosition, out hit, 2f, NavMesh.AllAreas))
+                {
+                    if (IsPositionAwayFromEdges(hit.position))
+                    {
+                        return hit.position;
+                    }
+                }
+            }
+        }
+        return Vector3.zero;
+    }
+
+    float EvaluateCoverPoint(Vector3 coverPoint, Vector3 threatPosition)
+    {
+        float score = 0f;
+
+        // 1. Check if threat can see this position (most important)
+        if (HasLineOfSightToPosition(coverPoint, threatPosition))
+        {
+            return 0f; // Visible to threat = bad cover
+        }
+        score += 50f; // Hidden from threat = good
+
+        // 2. Distance from threat (further is better for hiding)
+        float distanceToThreat = Vector3.Distance(coverPoint, threatPosition);
+        score += Mathf.Clamp01(distanceToThreat / coverSearchRadius) * 20f;
+
+        // 3. Distance from current position (closer is better for quick escape)
+        float distanceFromSelf = Vector3.Distance(coverPoint, transform.position);
+        score += Mathf.Clamp01(1f - (distanceFromSelf / coverSearchRadius)) * 10f;
+
+        // 4. Check if there's an obstacle between cover point and threat
+        RaycastHit hit;
+        Vector3 directionToThreat = (threatPosition - coverPoint).normalized;
+        if (Physics.Raycast(coverPoint + Vector3.up * 0.5f, directionToThreat, out hit,
+            Vector3.Distance(coverPoint, threatPosition), obstacleLayerMask))
+        {
+            score += 15f; // Obstacle blocking = extra good
+        }
+
+        return score;
+    }
+
+    bool HasLineOfSightToPlayer(Vector3 fromPosition)
+    {
+        if (player == null) return false;
+        return HasLineOfSightToPosition(fromPosition, player.position);
+    }
+
+    bool HasLineOfSightToPosition(Vector3 fromPosition, Vector3 targetPosition)
+    {
+        Vector3 directionToTarget = (targetPosition - fromPosition).normalized;
+        RaycastHit hit;
+
+        // Cast ray from potential position to target
+        if (Physics.Raycast(fromPosition + Vector3.up * 0.5f, directionToTarget, out hit,
+            Vector3.Distance(fromPosition, targetPosition)))
+        {
+            // If ray hits player first, there's line of sight (only check if target is player)
+            if (targetPosition == player.position)
+            {
+                return hit.collider.CompareTag("Player");
+            }
+            else
+            {
+                // For other positions, any obstacle blocks line of sight
+                return false;
+            }
+        }
+
+        return true; // No obstacles = line of sight exists
+    }
+
+    void StartReload()
+    {
+        isReloading = true;
+        reloadTimer = reloadTime;
+        Debug.Log("Tank is reloading...");
+    }
+
+    void UpdateTurningBehavior()
+    {
+        if (navAgent.hasPath && navAgent.path.corners.Length > 1)
+        {
+            // Calculate angle to next waypoint
+            Vector3 directionToWaypoint = (navAgent.path.corners[1] - transform.position).normalized;
+            Vector3 currentForward = transform.forward;
+
+            float angleToTarget = Vector3.Angle(currentForward, directionToWaypoint);
+
+            // Check if this is a sharp turn
+            if (angleToTarget > sharpTurnAngle)
+            {
+                if (!isSharpTurning)
+                {
+                    isSharpTurning = true;
+                    // Reduce speed for sharp turn
+                    navAgent.speed = navAgent.speed * slowTurnSpeedMultiplier;
+                }
+            }
+            else
+            {
+                if (isSharpTurning)
+                {
+                    isSharpTurning = false;
+                    // Restore normal speed
+                    RestoreNormalSpeed();
+                }
+            }
+        }
+        else
+        {
+            if (isSharpTurning)
+            {
+                isSharpTurning = false;
+                RestoreNormalSpeed();
+            }
+        }
+    }
+
+    void RestoreNormalSpeed()
+    {
+        // Restore speed based on current state
+        switch (currentState)
+        {
+            case AIState.Patrol:
+                navAgent.speed = moveSpeed;
+                break;
+            case AIState.Chase:
+                navAgent.speed = chaseSpeed;
+                break;
+            case AIState.Attack:
+                navAgent.speed = moveSpeed;
+                break;
+            case AIState.Flee:
+                navAgent.speed = fleeSpeed;
+                break;
+        }
     }
 
     void RotateTowardsTarget(Vector3 targetPosition)
     {
         Vector3 direction = (targetPosition - transform.position).normalized;
-        Vector3 cross = Vector3.Cross(transform.forward, direction);
-        float rotationDirection = cross.y > 0 ? 1 : -1;
+        direction.y = 0; // Keep rotation only on Y axis
 
-        float dot = Vector3.Dot(transform.forward, direction);
-        if (dot < 0.95f) // Not facing target accurately enough
+        if (direction != Vector3.zero)
         {
-            rotationInput = rotationDirection * 0.5f;
-        }
-        else
-        {
-            rotationInput = 0f;
+            Quaternion targetRotation = Quaternion.LookRotation(direction);
+            float rotationStep = rotationSpeed * Time.deltaTime / 100f;
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationStep);
         }
     }
 
@@ -283,7 +673,7 @@ public class AITankFSM : MonoBehaviour
 
     void FireAtPlayer()
     {
-        if (bulletPrefab != null && firePoint != null)
+        if (bulletPrefab != null && firePoint != null && currentAmmo > 0)
         {
             GameObject bullet = Instantiate(bulletPrefab, firePoint.position, firePoint.rotation);
             Rigidbody bulletRb = bullet.GetComponent<Rigidbody>();
@@ -291,6 +681,10 @@ public class AITankFSM : MonoBehaviour
             {
                 bulletRb.velocity = firePoint.forward * bulletSpeed;
             }
+
+            // Decrease ammo
+            currentAmmo--;
+            Debug.Log($"Tank fired! Ammo remaining: {currentAmmo}");
 
             // Destroy bullet after some time
             Destroy(bullet, 5.0f);
@@ -301,56 +695,95 @@ public class AITankFSM : MonoBehaviour
     {
         // Generate random point within patrol radius
         Vector2 randomCircle = Random.insideUnitCircle * patrolRadius;
-        targetPatrolPoint = patrolCenter + new Vector3(randomCircle.x, 0, randomCircle.y);
+        Vector3 randomPoint = patrolCenter + new Vector3(randomCircle.x, 0, randomCircle.y);
+
+        // Make sure the point is on the NavMesh
+        NavMeshHit hit;
+        if (NavMesh.SamplePosition(randomPoint, out hit, patrolRadius, NavMesh.AllAreas))
+        {
+            targetPatrolPoint = hit.position;
+        }
+        else
+        {
+            targetPatrolPoint = patrolCenter; // Fallback to center if no valid point found
+        }
     }
 
     void ChangeState(AIState newState)
     {
         currentState = newState;
 
-        // Reset state-specific timers
+        // Reset state-specific timers and agent settings
         switch (newState)
         {
-            case AIState.SearchPlayer:
-                searchTimer = 0f;
-                break;
             case AIState.Patrol:
                 patrolWaitTimer = 0f;
+                navAgent.speed = moveSpeed;
+                break;
+            case AIState.Chase:
+                navAgent.speed = chaseSpeed;
+                break;
+            case AIState.Attack:
+                navAgent.speed = moveSpeed;
+                break;
+            case AIState.Flee:
+                fleeTimer = 0f;
+                hasFoundCover = false;
+                navAgent.speed = fleeSpeed;
                 break;
         }
     }
 
-    // Movement methods (same as player script)
-    void MoveTankObj(float input)
+    void CalculateRealisticMovement()
     {
-        Vector3 moveDirection = transform.forward * input * moveSpeed * Time.fixedDeltaTime;
-        rb.MovePosition(rb.position + moveDirection);
+        // Get current movement data
+        Vector3 currentPosition = transform.position;
+        float currentRotationY = transform.eulerAngles.y;
+
+        // Calculate forward movement speed
+        Vector3 positionDelta = currentPosition - lastPosition;
+        Vector3 localPositionDelta = transform.InverseTransformDirection(positionDelta);
+        currentForwardSpeed = localPositionDelta.z / Time.deltaTime;
+
+        // Calculate rotation speed (turn rate)
+        float rotationDelta = Mathf.DeltaAngle(lastRotationY, currentRotationY);
+        currentTurnSpeed = rotationDelta / Time.deltaTime;
+
+        // Smooth the values to avoid jittery movement
+        currentForwardSpeed = Mathf.Lerp(currentForwardSpeed, navAgent.velocity.magnitude, Time.deltaTime * 5f);
+        currentTurnSpeed = Mathf.Lerp(currentTurnSpeed, rotationDelta / Time.deltaTime, Time.deltaTime * 3f);
+
+        // Store for next frame
+        lastPosition = currentPosition;
+        lastRotationY = currentRotationY;
     }
 
-    void RotateTank(float input)
+    void RotateWheelsRealistically()
     {
-        float rotation = input * rotationSpeed * Time.fixedDeltaTime;
-        Quaternion turnRotation = Quaternion.Euler(0.0f, rotation, 0.0f);
-        rb.MoveRotation(rb.rotation * turnRotation);
-    }
+        // Calculate wheel rotation based on actual movement
+        float wheelRotation = currentForwardSpeed * wheelRotationSpeed * Time.deltaTime;
 
-    void RotateWheels(float moveInput, float rotationInput)
-    {
-        float wheelRotation = moveInput * wheelRotationSpeed * Time.deltaTime;
+        // Calculate differential rotation for turning
+        // When turning, inner wheels slow down, outer wheels speed up
+        float turnEffect = currentTurnSpeed * 0.01f; // Adjust this multiplier for more/less turn effect
 
+        // Rotate left wheels
         foreach (GameObject wheel in leftWheels)
         {
             if (wheel != null)
             {
-                wheel.transform.Rotate(wheelRotation - rotationInput * wheelRotationSpeed * Time.deltaTime, 0.0f, 0.0f);
+                float leftWheelSpeed = wheelRotation + (currentTurnSpeed > 0 ? -turnEffect : turnEffect);
+                wheel.transform.Rotate(leftWheelSpeed, 0.0f, 0.0f);
             }
         }
 
+        // Rotate right wheels
         foreach (GameObject wheel in rightWheels)
         {
             if (wheel != null)
             {
-                wheel.transform.Rotate(wheelRotation + rotationInput * wheelRotationSpeed * Time.deltaTime, 0.0f, 0.0f);
+                float rightWheelSpeed = wheelRotation + (currentTurnSpeed > 0 ? turnEffect : -turnEffect);
+                wheel.transform.Rotate(rightWheelSpeed, 0.0f, 0.0f);
             }
         }
     }
@@ -375,6 +808,47 @@ public class AITankFSM : MonoBehaviour
         {
             Gizmos.color = Color.blue;
             Gizmos.DrawWireSphere(targetPatrolPoint, 0.5f);
+
+            // Show flee target if in flee state
+            if (currentState == AIState.Flee)
+            {
+                Gizmos.color = new Color(1f, 0.5f, 0f); // Orange color
+                Gizmos.DrawWireSphere(fleeTarget, 0.8f);
+                Gizmos.DrawLine(transform.position, fleeTarget);
+
+                // Show cover search radius
+                Gizmos.color = new Color(1f, 0.5f, 0f, 0.3f);
+                Gizmos.DrawWireSphere(transform.position, coverSearchRadius);
+
+                // Show edge avoidance radius around current position
+                Gizmos.color = new Color(0f, 1f, 0f, 0.2f);
+                Gizmos.DrawWireSphere(transform.position, edgeAvoidanceRadius);
+
+                // Show if tank has line of sight to player
+                if (player != null)
+                {
+                    bool hasLOS = HasLineOfSightToPlayer(transform.position);
+                    Gizmos.color = hasLOS ? Color.red : Color.green;
+                    Gizmos.DrawLine(transform.position + Vector3.up * 0.5f, player.position);
+                }
+            }
+
+            // Show NavMesh path
+            if (navAgent != null && navAgent.path != null)
+            {
+                Gizmos.color = Color.magenta;
+                Vector3[] pathCorners = navAgent.path.corners;
+                for (int i = 0; i < pathCorners.Length - 1; i++)
+                {
+                    Gizmos.DrawLine(pathCorners[i], pathCorners[i + 1]);
+                }
+            }
         }
+    }
+
+    // Public method to get current state info (for UI debugging)
+    public string GetStateInfo()
+    {
+        return $"State: {currentState}\nAmmo: {currentAmmo}/{maxAmmo}\nReloading: {isReloading}\nReload Timer: {(isReloading ? reloadTimer.ToString("F1") : "N/A")}\nSharp Turning: {isSharpTurning}\nCurrent Speed: {navAgent.speed:F1}\nHas Cover: {hasFoundCover}";
     }
 }
