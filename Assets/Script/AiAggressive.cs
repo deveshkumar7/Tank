@@ -1170,8 +1170,8 @@ public class AiAggressive : MonoBehaviour
                 Vector3 midPoint = (transform.position + playerGPSPosition) * 0.5f + Vector3.up * 3f;
 
                 // Show GPS status
-                string gpsStatus = hasGPSLock ? $"GPS: {gpsDistance:F1}m" : "GPS: NO LOCK";
-                UnityEditor.Handles.Label(midPoint, gpsStatus);
+                //string gpsStatus = hasGPSLock ? $"GPS: {gpsDistance:F1}m" : "GPS: NO LOCK";
+                //UnityEditor.Handles.Label(midPoint, gpsStatus);
             }
 
             // Show player direction arrow

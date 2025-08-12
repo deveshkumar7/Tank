@@ -36,9 +36,9 @@ public class AITankFSM : MonoBehaviour
     public float reloadTime = 3.0f;
 
     [Header("Firing Restrictions")]
-    public bool requireDirectAiming = true; // Enable/disable firing angle restrictions
-    public float firingAngle = 15.0f; // Maximum angle from forward direction to fire
-    public bool showFiringCone = true; // Show firing cone in gizmos
+    public bool requireDirectAiming = true; 
+    public float firingAngle = 15.0f; 
+    public bool showFiringCone = true; 
 
     [Header("Flee Settings")]
     public float fleeDistance = 15.0f;
@@ -48,7 +48,7 @@ public class AITankFSM : MonoBehaviour
     public int coverSearchPoints = 16;
     public float minCoverDistance = 3.0f;
     public float edgeAvoidanceRadius = 2.0f;
-    public float minFleeTime = 1.0f; // Minimum time to stay in flee state
+    public float minFleeTime = 1.0f; 
 
     // FSM States
     public enum AIState
@@ -59,9 +59,9 @@ public class AITankFSM : MonoBehaviour
         Flee
     }
 
-    // Private variables
+
     private AIState currentState;
-    private AIState previousState; // Track previous state for better transitions
+    private AIState previousState; 
     private NavMeshAgent navAgent;
     private Transform player;
     private Vector3 patrolCenter;
@@ -70,25 +70,23 @@ public class AITankFSM : MonoBehaviour
     private float patrolWaitTimer;
     private float lastKnownPlayerTime;
     private Vector3 lastKnownPlayerPosition;
-    private float stateChangeTime; // Track when state last changed
+    private float stateChangeTime;
 
-    // Combat variables
+    // AMMO
     private int currentAmmo;
     private bool isReloading;
     private float reloadTimer;
 
-    // Flee variables
+    // Flee
     private float fleeTimer;
     private Vector3 fleeTarget;
     private bool hasFoundCover;
     private List<Vector3> potentialCoverPoints;
     private bool hasReachedFleeTarget;
-
-    // Cover system cache
     private float lastCoverSearchTime;
     private float coverSearchCooldown = 2.0f;
 
-    // Movement tracking for realistic wheel rotation
+    // WHEEL
     private Vector3 lastPosition;
     private float lastRotationY;
     private float currentForwardSpeed;

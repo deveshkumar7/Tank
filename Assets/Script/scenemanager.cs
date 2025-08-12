@@ -3,10 +3,8 @@ using UnityEngine.SceneManagement;
 
 public class SceneController : MonoBehaviour
 {
-    // Name of the scene you want to load
     [SerializeField] private string sceneName;
 
-    // Load the specified scene
     public void StartGame()
     {
         if (!string.IsNullOrEmpty(sceneName))
@@ -19,14 +17,12 @@ public class SceneController : MonoBehaviour
         }
     }
 
-    // Reload the current scene from start
     public void ReloadScene()
     {
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
 
 
     }
-    // Exit the game
     public void ExitGame()
     {
         Debug.Log("Exiting Game...");

@@ -4,13 +4,12 @@ using TMPro;
 public class ScoreManager : MonoBehaviour
 {
     [Header("UI References")]
-    public TMP_Text scoreText;          // UI for score only
-    public TMP_Text combinedText;       // UI showing Score + HighScore on different lines
+    public TMP_Text scoreText;          
+    public TMP_Text combinedText;       // for game over screen
 
     private int score ;
     private int highScore = 0;
 
-    // Property to auto-update UI when score changes
     public int Score
     {
         get { return score; }
@@ -22,7 +21,7 @@ public class ScoreManager : MonoBehaviour
                 UpdateScoreUI();
                 UpdateCombinedUI();
 
-                // Update high score if needed
+                // check HS
                 if (score > highScore)
                 {
                     highScore = score;
@@ -59,13 +58,11 @@ public class ScoreManager : MonoBehaviour
             combinedText.text = "Score: " + score + "\nHigh Score: " + highScore;
     }
 
-    // Public function to add score
     public void AddScore(int amount)
     {
         Score += amount;
     }
 
-    // Public function to reset score
     public void ResetScore()
     {
         Score = 0;

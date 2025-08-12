@@ -2,24 +2,24 @@ using UnityEngine;
 
 public class barrelmove : MonoBehaviour
 {
-    public float mouseSensitivity = 5f;       // For horizontal rotation
-    public float keySensitivity = 30f;        // For vertical rotation using Q/E
-    public float minXRotation = -10f;         // Downward clamp
-    public float maxXRotation = 8f;          // Upward clamp
-    public float minYRotation = -60f;         // Left clamp
-    public float maxYRotation = 60f;          // Right clamp
+    public float mouseSensitivity = 5f;       
+    public float keySensitivity = 30f;       
+    public float minXRotation = -10f;         
+    public float maxXRotation = 8f;          
+    public float minYRotation = -60f;         
+    public float maxYRotation = 60f;          
 
-    private float currentXRotation = 0f;      // Vertical rotation (X-axis)
-    private float currentYRotation = 0f;      // Horizontal rotation (Y-axis)
+    private float currentXRotation = 0f;      
+    private float currentYRotation = 0f;     
 
     void Update()
     {
-        // Horizontal rotation with mouse
+        // 180 degree 
         float mouseX = Input.GetAxis("Mouse X");
         currentYRotation += mouseX * mouseSensitivity;
         currentYRotation = Mathf.Clamp(currentYRotation, minYRotation, maxYRotation);
 
-        // Vertical rotation with Q/E
+        // up-down
         if (Input.GetKey(KeyCode.Q))
         {
             currentXRotation += keySensitivity * Time.deltaTime;
@@ -31,7 +31,7 @@ public class barrelmove : MonoBehaviour
 
         currentXRotation = Mathf.Clamp(currentXRotation, minXRotation, maxXRotation);
 
-        // Apply combined rotation: pitch (X) and yaw (Y)
+        //key
         transform.localRotation = Quaternion.Euler(currentXRotation, currentYRotation, 0f);
 
          Debug.Log("Vertical Rotation (X-axis): " + currentXRotation + "°");
