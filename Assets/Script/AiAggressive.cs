@@ -5,7 +5,7 @@ using UnityEngine.AI;
 using TMPro;
 using UnityEngine.UI;
 
-public class AITankFSM : MonoBehaviour
+public class AiAggressive : MonoBehaviour
 {
     [Header("Movement Settings")]
     public float moveSpeed = 3.0f;
@@ -18,8 +18,10 @@ public class AITankFSM : MonoBehaviour
     public float sharpTurnAngle = 40.0f;
     public float slowTurnSpeedMultiplier = 0.3f;
 
-    [Header("AI Settings")]
-    public float detectionRange = 10.0f;
+    [Header("GPS AI Settings")]
+    public float gpsUpdateInterval = 0.5f; // How often to update player position
+    public float maxTrackingRange = 100.0f; // Maximum range to track player (0 = unlimited)
+    public bool requireLineOfSightToAttack = true; // Still need LOS to attack, but not to track
     public float attackRange = 5.0f;
     public float patrolRadius = 8.0f;
     public float patrolWaitTime = 2.0f;
@@ -36,9 +38,9 @@ public class AITankFSM : MonoBehaviour
     public float reloadTime = 3.0f;
 
     [Header("Firing Restrictions")]
-    public bool requireDirectAiming = true; // Enable/disable firing angle restrictions
-    public float firingAngle = 15.0f; // Maximum angle from forward direction to fire
-    public bool showFiringCone = true; // Show firing cone in gizmos
+    public bool requireDirectAiming = true;
+    public float firingAngle = 15.0f;
+    public bool showFiringCone = true;
 
     [Header("Flee Settings")]
     public float fleeDistance = 15.0f;
@@ -48,20 +50,28 @@ public class AITankFSM : MonoBehaviour
     public int coverSearchPoints = 16;
     public float minCoverDistance = 3.0f;
     public float edgeAvoidanceRadius = 2.0f;
-    public float minFleeTime = 1.0f; // Minimum time to stay in flee state
+    public float minFleeTime = 1.0f;
+
+    [Header("GPS Visualization")]
+    public bool showGPSConnection = true; // Show line to player even through walls
+    public Color gpsLineColor = new Color(1f, 0.5f, 0f);
+
+
+    public bool showPlayerDirection = true; // Show arrow pointing to player
 
     // FSM States
     public enum AIState
     {
         Patrol,
-        Chase,
+        Hunt, // New state: knows where player is but can't see them
+        Chase, // Can see player and is chasing
         Attack,
         Flee
     }
 
     // Private variables
     private AIState currentState;
-    private AIState previousState; // Track previous state for better transitions
+    private AIState previousState;
     private NavMeshAgent navAgent;
     private Transform player;
     private Vector3 patrolCenter;
@@ -70,7 +80,13 @@ public class AITankFSM : MonoBehaviour
     private float patrolWaitTimer;
     private float lastKnownPlayerTime;
     private Vector3 lastKnownPlayerPosition;
-    private float stateChangeTime; // Track when state last changed
+    private float stateChangeTime;
+
+    // GPS tracking variables
+    private Vector3 playerGPSPosition;
+    private float lastGPSUpdate;
+    private bool hasGPSLock;
+    private float distanceToPlayer;
 
     // Combat variables
     private int currentAmmo;
@@ -121,6 +137,10 @@ public class AITankFSM : MonoBehaviour
         hasReachedFleeTarget = false;
         potentialCoverPoints = new List<Vector3>();
 
+        // Initialize GPS system
+        hasGPSLock = false;
+        lastGPSUpdate = 0f;
+
         UpdateAmmoReloadUI();
 
         // Configure NavMeshAgent
@@ -130,6 +150,8 @@ public class AITankFSM : MonoBehaviour
         navAgent.stoppingDistance = 0.5f;
 
         SetNewPatrolPoint();
+
+        Debug.Log("GPS Tank AI initialized - Can track player anywhere on NavMesh!");
     }
 
     public void TakeDamage(float amount)
@@ -150,11 +172,7 @@ public class AITankFSM : MonoBehaviour
         if (scoreManager != null)
         {
             scoreManager.AddScore(10);
-            Debug.Log("Tank destroyed! Added 10 points to score.");
-        }
-        else
-        {
-            Debug.LogWarning("ScoreManager not found! Could not add score.");
+            Debug.Log("GPS Tank destroyed! Added 10 points to score.");
         }
 
         Destroy(gameObject);
@@ -185,11 +203,44 @@ public class AITankFSM : MonoBehaviour
 
     void Update()
     {
+        UpdateGPSTracking();
         UpdateReload();
         UpdateFSM();
         UpdateTurningBehavior();
         CalculateRealisticMovement();
         RotateWheelsRealistically();
+    }
+
+    void UpdateGPSTracking()
+    {
+        if (player == null)
+        {
+            hasGPSLock = false;
+            return;
+        }
+
+        // Update GPS position at specified intervals
+        if (Time.time - lastGPSUpdate >= gpsUpdateInterval)
+        {
+            playerGPSPosition = player.position;
+            distanceToPlayer = Vector3.Distance(transform.position, playerGPSPosition);
+
+            // Check if player is within tracking range (if limited)
+            if (maxTrackingRange > 0 && distanceToPlayer > maxTrackingRange)
+            {
+                hasGPSLock = false;
+                Debug.Log($"Player out of GPS range: {distanceToPlayer:F1}m (Max: {maxTrackingRange}m)");
+            }
+            else
+            {
+                hasGPSLock = true;
+                lastKnownPlayerPosition = playerGPSPosition;
+                lastKnownPlayerTime = Time.time;
+                //Debug.Log($"GPS Lock: Player at {distanceToPlayer:F1}m");
+            }
+
+            lastGPSUpdate = Time.time;
+        }
     }
 
     void UpdateReload()
@@ -202,7 +253,7 @@ public class AITankFSM : MonoBehaviour
             {
                 isReloading = false;
                 currentAmmo = maxAmmo;
-                Debug.Log("Tank reloaded!");
+                Debug.Log("GPS Tank reloaded!");
             }
         }
 
@@ -211,13 +262,15 @@ public class AITankFSM : MonoBehaviour
 
     void UpdateFSM()
     {
-        // Store time since last state change
         float timeSinceStateChange = Time.time - stateChangeTime;
 
         switch (currentState)
         {
             case AIState.Patrol:
                 PatrolBehavior();
+                break;
+            case AIState.Hunt:
+                HuntBehavior();
                 break;
             case AIState.Chase:
                 ChaseBehavior();
@@ -241,13 +294,21 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Priority 2: Check for player detection
-        if (CanSeePlayer())
+        // Priority 2: Check GPS tracking for player
+        if (hasGPSLock)
         {
-            lastKnownPlayerPosition = player.position;
-            lastKnownPlayerTime = Time.time;
-            ChangeState(AIState.Chase);
-            return;
+            if (CanSeePlayer())
+            {
+                // Can see player directly - go to chase
+                ChangeState(AIState.Chase);
+                return;
+            }
+            else
+            {
+                // Know where player is but can't see them - start hunting
+                ChangeState(AIState.Hunt);
+                return;
+            }
         }
 
         // Normal patrol behavior
@@ -274,6 +335,66 @@ public class AITankFSM : MonoBehaviour
         }
     }
 
+    void HuntBehavior()
+    {
+        // Priority 1: Check if out of ammo and need to flee
+        if (currentAmmo <= 0 && !isReloading)
+        {
+            StartReload();
+            ChangeState(AIState.Flee);
+            return;
+        }
+
+        // Priority 2: Check if lost GPS lock
+        if (!hasGPSLock)
+        {
+            Debug.Log("Lost GPS lock on player, returning to patrol");
+            ChangeState(AIState.Patrol);
+            return;
+        }
+
+        // Priority 3: Check if can now see player
+        if (CanSeePlayer())
+        {
+            ChangeState(AIState.Chase);
+            return;
+        }
+
+        // Hunt behavior: move towards last known GPS position
+        float distanceToGPSTarget = Vector3.Distance(transform.position, playerGPSPosition);
+
+        if (distanceToGPSTarget <= attackRange)
+        {
+            // Close enough to attack range, try to get line of sight
+            if (requireLineOfSightToAttack)
+            {
+                // Move around to try to get line of sight
+                FindBetterPositionForLineOfSight();
+            }
+            else
+            {
+                // Can attack without line of sight (GPS guided)
+                ChangeState(AIState.Attack);
+                return;
+            }
+        }
+        else
+        {
+            // Move towards player's GPS position
+            if (navAgent.isStopped)
+            {
+                navAgent.isStopped = false;
+            }
+
+            NavMeshHit hit;
+            if (NavMesh.SamplePosition(playerGPSPosition, out hit, 5f, NavMesh.AllAreas))
+            {
+                navAgent.SetDestination(hit.position);
+                Debug.Log($"Hunting player via GPS - Distance: {distanceToGPSTarget:F1}m");
+            }
+        }
+    }
+
     void ChaseBehavior()
     {
         // Priority 1: Check if out of ammo and need to flee
@@ -284,15 +405,22 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Priority 2: Check if still can see player
+        // Priority 2: Check if lost sight but still have GPS
         if (!CanSeePlayer())
         {
-            // Lost sight, return to patrol
-            ChangeState(AIState.Patrol);
-            return;
+            if (hasGPSLock)
+            {
+                ChangeState(AIState.Hunt);
+                return;
+            }
+            else
+            {
+                ChangeState(AIState.Patrol);
+                return;
+            }
         }
 
-        // Update last known player position
+        // Update positions
         lastKnownPlayerPosition = player.position;
         lastKnownPlayerTime = Time.time;
 
@@ -305,7 +433,7 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Chase the player
+        // Chase the player directly
         if (navAgent.isStopped)
         {
             navAgent.isStopped = false;
@@ -315,7 +443,7 @@ public class AITankFSM : MonoBehaviour
 
     void AttackBehavior()
     {
-        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+        float distanceToTarget = hasGPSLock ? distanceToPlayer : Vector3.Distance(transform.position, player.position);
 
         // Priority 1: Check if out of ammo and need to flee
         if (currentAmmo <= 0 && !isReloading)
@@ -325,28 +453,76 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Priority 2: Check if can still see player
-        if (!CanSeePlayer())
+        // Priority 2: Check attack conditions based on settings
+        bool canAttack = false;
+        Vector3 targetPosition = Vector3.zero;
+
+        if (requireLineOfSightToAttack)
         {
-            ChangeState(AIState.Patrol);
-            return;
+            // Need line of sight to attack
+            if (CanSeePlayer())
+            {
+                canAttack = true;
+                targetPosition = player.position;
+            }
+            else if (hasGPSLock)
+            {
+                // Lost line of sight, go back to hunting
+                ChangeState(AIState.Hunt);
+                return;
+            }
+            else
+            {
+                ChangeState(AIState.Patrol);
+                return;
+            }
+        }
+        else
+        {
+            // Can attack using GPS guidance
+            if (hasGPSLock)
+            {
+                canAttack = true;
+                targetPosition = playerGPSPosition;
+            }
+            else if (CanSeePlayer())
+            {
+                canAttack = true;
+                targetPosition = player.position;
+            }
+            else
+            {
+                ChangeState(AIState.Patrol);
+                return;
+            }
         }
 
-        // Priority 3: Check if player is too far
-        if (distanceToPlayer > attackRange * 1.2f) // Add hysteresis
+        // Priority 3: Check if target is too far
+        if (distanceToTarget > attackRange * 1.2f)
         {
-            ChangeState(AIState.Chase);
+            if (CanSeePlayer())
+            {
+                ChangeState(AIState.Chase);
+            }
+            else if (hasGPSLock)
+            {
+                ChangeState(AIState.Hunt);
+            }
+            else
+            {
+                ChangeState(AIState.Patrol);
+            }
             return;
         }
 
         // Stop and attack
         navAgent.isStopped = true;
-        RotateTowardsTarget(player.position);
+        RotateTowardsTarget(targetPosition);
 
-        // Fire if conditions are met (including angle check if enabled)
-        if (CanFireAtPlayer())
+        // Fire if conditions are met
+        if (canAttack && CanFireAtTarget(targetPosition))
         {
-            FireAtPlayer();
+            FireAtTarget(targetPosition);
             lastFireTime = Time.time;
         }
     }
@@ -355,7 +531,6 @@ public class AITankFSM : MonoBehaviour
     {
         fleeTimer += Time.deltaTime;
 
-        // Ensure minimum flee time to avoid rapid state switching
         bool canExitFlee = timeSinceStateChange >= minFleeTime;
 
         // Find cover if needed
@@ -368,7 +543,7 @@ public class AITankFSM : MonoBehaviour
                 hasFoundCover = true;
                 hasReachedFleeTarget = false;
                 lastCoverSearchTime = Time.time;
-                Debug.Log("Tank found cover behind obstacle!");
+                Debug.Log("GPS Tank found cover!");
             }
             else
             {
@@ -392,18 +567,17 @@ public class AITankFSM : MonoBehaviour
         }
         else
         {
-            // Reached flee target
             if (!hasReachedFleeTarget)
             {
                 navAgent.isStopped = true;
                 hasReachedFleeTarget = true;
-                Debug.Log("Tank reached flee target");
+                Debug.Log("GPS Tank reached flee target");
             }
 
-            // Face away from player while hiding
-            if (player != null)
+            // Face away from player GPS position
+            if (hasGPSLock)
             {
-                Vector3 hideDirection = (transform.position - player.position).normalized;
+                Vector3 hideDirection = (transform.position - playerGPSPosition).normalized;
                 Vector3 lookDirection = transform.position + hideDirection;
                 RotateTowardsTarget(lookDirection);
             }
@@ -412,22 +586,29 @@ public class AITankFSM : MonoBehaviour
         // Only exit flee state if reload is complete AND minimum flee time has passed
         if (!isReloading && currentAmmo > 0 && canExitFlee)
         {
-            Debug.Log("Tank finished reloading and is ready to fight!");
+            Debug.Log("GPS Tank finished reloading and is ready to fight!");
             fleeTimer = 0f;
             hasFoundCover = false;
             hasReachedFleeTarget = false;
 
-            // Decide next state based on player visibility
-            if (CanSeePlayer())
+            // Decide next state based on GPS and line of sight
+            if (hasGPSLock)
             {
-                float distanceToPlayer = Vector3.Distance(transform.position, player.position);
-                if (distanceToPlayer <= attackRange)
+                if (CanSeePlayer())
                 {
-                    ChangeState(AIState.Attack);
+                    float dist = Vector3.Distance(transform.position, player.position);
+                    if (dist <= attackRange)
+                    {
+                        ChangeState(AIState.Attack);
+                    }
+                    else
+                    {
+                        ChangeState(AIState.Chase);
+                    }
                 }
                 else
                 {
-                    ChangeState(AIState.Chase);
+                    ChangeState(AIState.Hunt);
                 }
             }
             else
@@ -437,36 +618,71 @@ public class AITankFSM : MonoBehaviour
         }
     }
 
+    void FindBetterPositionForLineOfSight()
+    {
+        // Try to find a position where we can get line of sight to the player
+        Vector3 playerPos = playerGPSPosition;
+        Vector3 currentPos = transform.position;
+
+        // Try positions around the player at attack range
+        for (int i = 0; i < 8; i++)
+        {
+            float angle = i * 45f * Mathf.Deg2Rad;
+            Vector3 offset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * (attackRange * 0.8f);
+            Vector3 testPosition = playerPos + offset;
+
+            NavMeshHit hit;
+            if (NavMesh.SamplePosition(testPosition, out hit, 5f, NavMesh.AllAreas))
+            {
+                // Check if this position would give line of sight
+                Vector3 directionToPlayer = (playerPos - hit.position).normalized;
+                RaycastHit rayHit;
+
+                if (!Physics.Raycast(hit.position + Vector3.up * 0.5f, directionToPlayer, out rayHit,
+                    Vector3.Distance(hit.position, playerPos)))
+                {
+                    // No obstacles - this position should give line of sight
+                    navAgent.SetDestination(hit.position);
+                    Debug.Log("Moving to get line of sight to GPS target");
+                    return;
+                }
+            }
+        }
+
+        // If no good position found, just move closer to GPS position
+        navAgent.SetDestination(playerGPSPosition);
+    }
+
     void FleeDirectlyFromPlayer()
     {
-        if (player != null)
+        Vector3 threatPosition = hasGPSLock ? playerGPSPosition :
+                                (player != null ? player.position : lastKnownPlayerPosition);
+
+        Vector3 fleeDirection = (transform.position - threatPosition).normalized;
+        Vector3 fleePosition = transform.position + fleeDirection * fleeDistance;
+
+        Vector3 safeFleePosition = FindSafeNavMeshPosition(fleePosition, fleeDistance);
+
+        if (safeFleePosition != Vector3.zero)
         {
-            Vector3 fleeDirection = (transform.position - player.position).normalized;
-            Vector3 fleePosition = transform.position + fleeDirection * fleeDistance;
-
-            Vector3 safeFleePosition = FindSafeNavMeshPosition(fleePosition, fleeDistance);
-
-            if (safeFleePosition != Vector3.zero)
+            fleeTarget = safeFleePosition;
+            Debug.Log("GPS Tank fleeing from GPS position");
+        }
+        else
+        {
+            // Try multiple directions
+            for (int i = 0; i < 12; i++)
             {
-                fleeTarget = safeFleePosition;
-                Debug.Log("Tank fleeing directly from player");
-            }
-            else
-            {
-                // Try multiple directions if direct flee fails
-                for (int i = 0; i < 12; i++)
+                float angle = i * 30f * Mathf.Deg2Rad;
+                Vector3 searchDirection = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+                Vector3 testPosition = transform.position + searchDirection * fleeDistance;
+
+                Vector3 testSafePosition = FindSafeNavMeshPosition(testPosition, fleeDistance * 0.5f);
+                if (testSafePosition != Vector3.zero)
                 {
-                    float angle = i * 30f * Mathf.Deg2Rad;
-                    Vector3 searchDirection = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
-                    Vector3 testPosition = transform.position + searchDirection * fleeDistance;
-
-                    Vector3 testSafePosition = FindSafeNavMeshPosition(testPosition, fleeDistance * 0.5f);
-                    if (testSafePosition != Vector3.zero)
-                    {
-                        fleeTarget = testSafePosition;
-                        Debug.Log($"Tank found alternative flee direction at angle {i * 30f}");
-                        break;
-                    }
+                    fleeTarget = testSafePosition;
+                    Debug.Log($"GPS Tank found alternative flee direction at angle {i * 30f}");
+                    break;
                 }
             }
         }
@@ -474,12 +690,11 @@ public class AITankFSM : MonoBehaviour
 
     Vector3 FindBestCoverPoint()
     {
-        if (player == null) return Vector3.zero;
+        Vector3 threatPosition = hasGPSLock ? playerGPSPosition :
+                                (player != null ? player.position : lastKnownPlayerPosition);
 
         Vector3 bestCoverPoint = Vector3.zero;
         float bestScore = -1f;
-
-        Vector3 currentPlayerPosition = player.position;
 
         for (int i = 0; i < coverSearchPoints; i++)
         {
@@ -495,7 +710,7 @@ public class AITankFSM : MonoBehaviour
             if (Vector3.Distance(transform.position, validCoverPoint) < minCoverDistance)
                 continue;
 
-            float coverScore = EvaluateCoverPoint(validCoverPoint, currentPlayerPosition);
+            float coverScore = EvaluateCoverPoint(validCoverPoint, threatPosition);
 
             if (coverScore > bestScore)
             {
@@ -506,7 +721,7 @@ public class AITankFSM : MonoBehaviour
 
         if (bestScore < 0.1f)
         {
-            return FindCoverBehindObstacles(currentPlayerPosition);
+            return FindCoverBehindObstacles(threatPosition);
         }
 
         return bestCoverPoint;
@@ -636,12 +851,6 @@ public class AITankFSM : MonoBehaviour
         return score;
     }
 
-    bool HasLineOfSightToPlayer(Vector3 fromPosition)
-    {
-        if (player == null) return false;
-        return HasLineOfSightToPosition(fromPosition, player.position);
-    }
-
     bool HasLineOfSightToPosition(Vector3 fromPosition, Vector3 targetPosition)
     {
         Vector3 directionToTarget = (targetPosition - fromPosition).normalized;
@@ -650,7 +859,7 @@ public class AITankFSM : MonoBehaviour
         if (Physics.Raycast(fromPosition + Vector3.up * 0.5f, directionToTarget, out hit,
             Vector3.Distance(fromPosition, targetPosition)))
         {
-            if (targetPosition == player.position)
+            if (player != null && targetPosition == player.position)
             {
                 return hit.collider.CompareTag("Player");
             }
@@ -663,13 +872,89 @@ public class AITankFSM : MonoBehaviour
         return true;
     }
 
+    bool CanSeePlayer()
+    {
+        if (player == null) return false;
+
+        // Line of sight check
+        Vector3 rayDirection = (player.position - transform.position).normalized;
+        RaycastHit hit;
+
+        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, rayDirection, out hit,
+            Vector3.Distance(transform.position, player.position)))
+        {
+            return hit.collider.CompareTag("Player");
+        }
+
+        return true; // No obstacles = can see
+    }
+
+    bool CanFireAtTarget(Vector3 targetPosition)
+    {
+        // Basic firing conditions
+        if (isReloading || currentAmmo <= 0 || Time.time - lastFireTime < timeBetweenBullets)
+        {
+            return false;
+        }
+
+        // If direct aiming is not required, fire as before
+        if (!requireDirectAiming)
+        {
+            return true;
+        }
+
+        // Check if target is within firing angle
+        return IsTargetInFiringCone(targetPosition);
+    }
+
+    bool IsTargetInFiringCone(Vector3 targetPosition)
+    {
+        Vector3 directionToTarget = (targetPosition - transform.position).normalized;
+        Vector3 tankForward = transform.forward;
+
+        float angleToTarget = Vector3.Angle(tankForward, directionToTarget);
+        bool withinAngle = angleToTarget <= firingAngle;
+
+        if (withinAngle)
+        {
+            Debug.Log($"Target in firing cone! Angle: {angleToTarget:F1}° (Max: {firingAngle}°)");
+        }
+
+        return withinAngle;
+    }
+
+    void FireAtTarget(Vector3 targetPosition)
+    {
+        if (bulletPrefab != null && firePoint != null && currentAmmo > 0)
+        {
+            // Calculate direction to target
+            Vector3 fireDirection = (targetPosition - firePoint.position).normalized;
+            Quaternion fireRotation = Quaternion.LookRotation(fireDirection);
+
+            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, fireRotation);
+            Rigidbody bulletRb = bullet.GetComponent<Rigidbody>();
+            if (bulletRb != null)
+            {
+                bulletRb.velocity = fireDirection * bulletSpeed;
+            }
+
+            currentAmmo--;
+            UpdateAmmoReloadUI();
+
+            string targetType = (targetPosition == player.position) ? "Player (LOS)" : "GPS Position";
+            Debug.Log($"GPS Tank fired at {targetType}! Ammo remaining: {currentAmmo}");
+
+            Destroy(bullet, 5.0f);
+        }
+    }
+
     void StartReload()
     {
-        if (!isReloading) // Prevent multiple reload calls
+        if (!isReloading)
         {
             isReloading = true;
             reloadTimer = reloadTime;
-            Debug.Log("Tank started reloading...");
+            Debug.Log("GPS Tank started reloading...");
         }
     }
 
@@ -716,6 +1001,9 @@ public class AITankFSM : MonoBehaviour
             case AIState.Patrol:
                 navAgent.speed = moveSpeed;
                 break;
+            case AIState.Hunt:
+                navAgent.speed = chaseSpeed;
+                break;
             case AIState.Chase:
                 navAgent.speed = chaseSpeed;
                 break;
@@ -738,87 +1026,6 @@ public class AITankFSM : MonoBehaviour
             Quaternion targetRotation = Quaternion.LookRotation(direction);
             float rotationStep = rotationSpeed * Time.deltaTime / 100f;
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationStep);
-        }
-    }
-
-    bool CanSeePlayer()
-    {
-        if (player == null) return false;
-
-        float distance = Vector3.Distance(transform.position, player.position);
-        if (distance > detectionRange) return false;
-
-        Vector3 rayDirection = (player.position - transform.position).normalized;
-        RaycastHit hit;
-
-        if (Physics.Raycast(transform.position + Vector3.up * 0.5f, rayDirection, out hit, detectionRange))
-        {
-            return hit.collider.CompareTag("Player");
-        }
-
-        return false;
-    }
-
-    bool CanFireAtPlayer()
-    {
-        // Basic firing conditions
-        if (isReloading || currentAmmo <= 0 || Time.time - lastFireTime < timeBetweenBullets)
-        {
-            return false;
-        }
-
-        // If direct aiming is not required, fire as before
-        if (!requireDirectAiming)
-        {
-            return true;
-        }
-
-        // Check if player is within firing angle
-        return IsPlayerInFiringCone();
-    }
-
-    bool IsPlayerInFiringCone()
-    {
-        if (player == null) return false;
-
-        Vector3 directionToPlayer = (player.position - transform.position).normalized;
-        Vector3 tankForward = transform.forward;
-
-        // Calculate angle between tank's forward direction and direction to player
-        float angleToPlayer = Vector3.Angle(tankForward, directionToPlayer);
-
-        // Check if player is within the firing cone
-        bool withinAngle = angleToPlayer <= firingAngle;
-
-        if (withinAngle)
-        {
-            Debug.Log($"Player in firing cone! Angle: {angleToPlayer:F1}° (Max: {firingAngle}°)");
-        }
-        else
-        {
-            Debug.Log($"Player outside firing cone. Angle: {angleToPlayer:F1}° (Max: {firingAngle}°) - Still aiming...");
-        }
-
-        return withinAngle;
-    }
-
-    void FireAtPlayer()
-    {
-        if (bulletPrefab != null && firePoint != null && currentAmmo > 0)
-        {
-            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, firePoint.rotation);
-            Rigidbody bulletRb = bullet.GetComponent<Rigidbody>();
-            if (bulletRb != null)
-            {
-                bulletRb.velocity = firePoint.forward * bulletSpeed;
-            }
-
-            currentAmmo--;
-            UpdateAmmoReloadUI();
-
-            Debug.Log($"Tank fired! Ammo remaining: {currentAmmo}");
-
-            Destroy(bullet, 5.0f);
         }
     }
 
@@ -846,19 +1053,20 @@ public class AITankFSM : MonoBehaviour
             currentState = newState;
             stateChangeTime = Time.time;
 
-            Debug.Log($"Tank state changed from {previousState} to {newState}");
+            Debug.Log($"GPS Tank state changed from {previousState} to {newState}");
 
-            // Reset state-specific variables
             switch (newState)
             {
                 case AIState.Patrol:
                     patrolWaitTimer = 0f;
                     navAgent.speed = moveSpeed;
-                    // Ensure we have a valid patrol point
                     if (Vector3.Distance(targetPatrolPoint, transform.position) < 1f)
                     {
                         SetNewPatrolPoint();
                     }
+                    break;
+                case AIState.Hunt:
+                    navAgent.speed = chaseSpeed;
                     break;
                 case AIState.Chase:
                     navAgent.speed = chaseSpeed;
@@ -874,7 +1082,6 @@ public class AITankFSM : MonoBehaviour
                     break;
             }
 
-            // Ensure NavMeshAgent is not stopped when changing to movement states
             if (newState != AIState.Attack)
             {
                 navAgent.isStopped = false;
@@ -927,9 +1134,12 @@ public class AITankFSM : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
-        // Detection range
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position, detectionRange);
+        // Detection/GPS range
+        if (maxTrackingRange > 0)
+        {
+            Gizmos.color = new Color(0f, 1f, 1f, 0.3f); // Cyan for GPS range
+            Gizmos.DrawWireSphere(transform.position, maxTrackingRange);
+        }
 
         // Attack range
         Gizmos.color = Color.red;
@@ -945,10 +1155,55 @@ public class AITankFSM : MonoBehaviour
             Gizmos.color = Color.blue;
             Gizmos.DrawWireSphere(targetPatrolPoint, 0.5f);
 
+            // GPS connection line
+            if (showGPSConnection && hasGPSLock && player != null)
+            {
+                Gizmos.color = gpsLineColor;
+                Gizmos.DrawLine(transform.position + Vector3.up * 2f, playerGPSPosition + Vector3.up * 2f);
+
+                // Draw GPS target position
+                Gizmos.color = new Color(gpsLineColor.r, gpsLineColor.g, gpsLineColor.b, 0.7f);
+                Gizmos.DrawWireSphere(playerGPSPosition, 1f);
+
+                // Show distance text
+                float gpsDistance = Vector3.Distance(transform.position, playerGPSPosition);
+                Vector3 midPoint = (transform.position + playerGPSPosition) * 0.5f + Vector3.up * 3f;
+
+                // Show GPS status
+                string gpsStatus = hasGPSLock ? $"GPS: {gpsDistance:F1}m" : "GPS: NO LOCK";
+                UnityEditor.Handles.Label(midPoint, gpsStatus);
+            }
+
+            // Show player direction arrow
+            if (showPlayerDirection && hasGPSLock && player != null)
+            {
+                Vector3 directionToPlayer = (playerGPSPosition - transform.position).normalized;
+                Vector3 arrowStart = transform.position + Vector3.up * 1.5f;
+                Vector3 arrowEnd = arrowStart + directionToPlayer * 3f;
+
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawLine(arrowStart, arrowEnd);
+
+                // Arrow head
+                Vector3 arrowLeft = Quaternion.AngleAxis(30, Vector3.up) * (-directionToPlayer) * 0.5f;
+                Vector3 arrowRight = Quaternion.AngleAxis(-30, Vector3.up) * (-directionToPlayer) * 0.5f;
+                Gizmos.DrawLine(arrowEnd, arrowEnd + arrowLeft);
+                Gizmos.DrawLine(arrowEnd, arrowEnd + arrowRight);
+            }
+
             // Show firing cone when in attack mode
             if (showFiringCone && requireDirectAiming && currentState == AIState.Attack)
             {
                 DrawFiringCone();
+            }
+
+            // State-specific visualizations
+            if (currentState == AIState.Hunt)
+            {
+                // Show hunt path to GPS position
+                Gizmos.color = new Color(1f, 0.5f, 0f);
+                Gizmos.DrawLine(transform.position, playerGPSPosition);
+                Gizmos.DrawWireSphere(playerGPSPosition, 0.5f);
             }
 
             // Flee state visualization
@@ -961,14 +1216,12 @@ public class AITankFSM : MonoBehaviour
                 Gizmos.color = new Color(1f, 0.5f, 0f, 0.3f);
                 Gizmos.DrawWireSphere(transform.position, coverSearchRadius);
 
-                Gizmos.color = new Color(0f, 1f, 0f, 0.2f);
-                Gizmos.DrawWireSphere(transform.position, edgeAvoidanceRadius);
-
-                if (player != null)
+                // Show line of sight to GPS position
+                if (hasGPSLock)
                 {
-                    bool hasLOS = HasLineOfSightToPlayer(transform.position);
-                    Gizmos.color = hasLOS ? Color.red : Color.green;
-                    Gizmos.DrawLine(transform.position + Vector3.up * 0.5f, player.position);
+                    bool hasLOS = !HasLineOfSightToPosition(transform.position, playerGPSPosition);
+                    Gizmos.color = hasLOS ? Color.green : Color.red;
+                    Gizmos.DrawLine(transform.position + Vector3.up * 0.5f, playerGPSPosition);
                 }
             }
 
@@ -987,29 +1240,39 @@ public class AITankFSM : MonoBehaviour
 
     void DrawFiringCone()
     {
-        if (player == null) return;
-
         Vector3 tankPosition = transform.position + Vector3.up * 0.5f;
         Vector3 tankForward = transform.forward;
 
-        // Check if player is in firing cone
-        bool playerInCone = IsPlayerInFiringCone();
+        // Determine target position for cone calculation
+        Vector3 targetPos = Vector3.zero;
+        bool hasTarget = false;
 
-        // Set color based on whether player is in cone
-        Gizmos.color = playerInCone ? new Color(1f, 0f, 0f, 0.3f) : new Color(1f, 1f, 0f, 0.2f);
+        if (requireLineOfSightToAttack && CanSeePlayer())
+        {
+            targetPos = player.position;
+            hasTarget = true;
+        }
+        else if (!requireLineOfSightToAttack && hasGPSLock)
+        {
+            targetPos = playerGPSPosition;
+            hasTarget = true;
+        }
+
+        bool targetInCone = hasTarget && IsTargetInFiringCone(targetPos);
+
+        // Set color based on whether target is in cone
+        Gizmos.color = targetInCone ? new Color(1f, 0f, 0f, 0.3f) : new Color(1f, 1f, 0f, 0.2f);
 
         // Draw firing cone
         float coneDistance = attackRange * 1.5f;
 
-        // Calculate cone edges
         Vector3 leftEdge = Quaternion.AngleAxis(-firingAngle, Vector3.up) * tankForward;
         Vector3 rightEdge = Quaternion.AngleAxis(firingAngle, Vector3.up) * tankForward;
 
-        // Draw cone lines
         Gizmos.DrawLine(tankPosition, tankPosition + leftEdge * coneDistance);
         Gizmos.DrawLine(tankPosition, tankPosition + rightEdge * coneDistance);
 
-        // Draw arc at the end of cone
+        // Draw arc
         int segments = 10;
         Vector3 prevPoint = tankPosition + leftEdge * coneDistance;
 
@@ -1022,36 +1285,47 @@ public class AITankFSM : MonoBehaviour
             prevPoint = newPoint;
         }
 
-        // Draw line to player if visible
-        if (player != null)
+        // Draw line to target
+        if (hasTarget)
         {
-            Vector3 directionToPlayer = (player.position - transform.position).normalized;
-            float angleToPlayer = Vector3.Angle(tankForward, directionToPlayer);
+            Vector3 directionToTarget = (targetPos - transform.position).normalized;
+            float angleToTarget = Vector3.Angle(tankForward, directionToTarget);
 
-            // Different color for line to player based on firing capability
-            if (playerInCone && CanFireAtPlayer())
+            if (targetInCone && CanFireAtTarget(targetPos))
             {
                 Gizmos.color = Color.red; // Can fire
             }
-            else if (playerInCone)
+            else if (targetInCone)
             {
-                Gizmos.color = Color.yellow; // In cone but can't fire (cooldown, etc.)
+                Gizmos.color = Color.yellow; // In cone but can't fire
             }
             else
             {
                 Gizmos.color = Color.white; // Out of cone
             }
 
-            Gizmos.DrawLine(tankPosition, player.position);
+            Gizmos.DrawLine(tankPosition, targetPos);
         }
     }
 
     public string GetStateInfo()
     {
-        string firingInfo = requireDirectAiming ?
-            $"\nFiring Mode: Direct Aiming ({firingAngle}°)\nCan Fire: {CanFireAtPlayer()}" :
-            "\nFiring Mode: Any Direction\nCan Fire: " + (!isReloading && currentAmmo > 0 && Time.time - lastFireTime >= timeBetweenBullets);
+        string gpsInfo = hasGPSLock ?
+            $"\nGPS Lock: YES ({distanceToPlayer:F1}m)" :
+            "\nGPS Lock: NO";
 
-        return $"State: {currentState} (Previous: {previousState})\nAmmo: {currentAmmo}/{maxAmmo}\nReloading: {isReloading}\nReload Timer: {(isReloading ? reloadTimer.ToString("F1") : "N/A")}\nSharp Turning: {isSharpTurning}\nCurrent Speed: {navAgent.speed:F1}\nHas Cover: {hasFoundCover}\nReached Flee Target: {hasReachedFleeTarget}\nTime Since State Change: {(Time.time - stateChangeTime):F1}s{firingInfo}";
+        string trackingRange = maxTrackingRange > 0 ?
+            $"\nGPS Range: {maxTrackingRange}m" :
+            "\nGPS Range: Unlimited";
+
+        string firingInfo = requireDirectAiming ?
+            $"\nFiring Mode: Direct Aiming ({firingAngle}°)" :
+            "\nFiring Mode: Any Direction";
+
+        string losRequirement = requireLineOfSightToAttack ?
+            "\nLOS Required: YES" :
+            "\nLOS Required: NO (GPS Guided)";
+
+        return $"State: {currentState} (Previous: {previousState})\nAmmo: {currentAmmo}/{maxAmmo}\nReloading: {isReloading}\nReload Timer: {(isReloading ? reloadTimer.ToString("F1") : "N/A")}\nSharp Turning: {isSharpTurning}\nCurrent Speed: {navAgent.speed:F1}{gpsInfo}{trackingRange}{firingInfo}{losRequirement}\nHas Cover: {hasFoundCover}\nReached Flee Target: {hasReachedFleeTarget}\nTime Since State Change: {(Time.time - stateChangeTime):F1}s";
     }
 }

@@ -39,6 +39,18 @@ public class Bullet : MonoBehaviour
         {
             other.GetComponent<AITankFSM>()?.TakeDamage(damage);
         }
+        else if (other.CompareTag("Enemy2"))
+        {
+            other.GetComponent<AiAggressive>()?.TakeDamage(damage);
+        }
+        else if (other.CompareTag("EnemyS"))
+        {
+            other.GetComponent<AiSniper>()?.TakeDamage(damage);
+        }
+        else if (other.CompareTag("EnemyM"))
+        {
+            other.GetComponent<AIMulti>()?.TakeDamage(damage);
+        }
 
         Destroy(gameObject);
     }

@@ -31,6 +31,11 @@ public class MoveTank : MonoBehaviour
     public float bulletSpeed = 15.0f;
     public KeyCode fireKey = KeyCode.Space;
 
+    [Header("Ammo Settings")]
+    public int maxAmmo = 30;
+    private int currentAmmo;
+    public TextMeshProUGUI ammoText; // Optional UI display
+
     // -------- New UI & Health Settings --------
     [Header("UI Settings")]
     public Image healthBarImage; 
@@ -85,9 +90,20 @@ public class MoveTank : MonoBehaviour
         UpdateShieldUI();
         UpdateHealthUI();
 
+        currentAmmo = maxAmmo;
+        UpdateAmmoUI();
+
+
         // Make sure Game Over canvas is hidden at start
         if (gameOverCanvas != null) gameOverCanvas.SetActive(false);
     }
+
+    void UpdateAmmoUI()
+    {
+        if (ammoText != null)
+            ammoText.text = "AMMO - " + currentAmmo ;
+    }
+
     void UpdateShieldUI()
     {
         if (shieldP != null)
@@ -152,6 +168,13 @@ public class MoveTank : MonoBehaviour
 
     void Update()
     {
+        // Trigger Game Over when pressing G
+        if (Input.GetKeyDown(KeyCode.G))
+        {
+            GameOver();
+        }
+
+
         // Get input
         moveInput = Input.GetAxis("Vertical");
         rotationInput = Input.GetAxis("Horizontal");
@@ -308,14 +331,20 @@ public class MoveTank : MonoBehaviour
 
     void FireBullet()
     {
+        if (currentAmmo < 0)
+        {
+            GameOver();
+            return;
+        }
+
         if (bulletPrefab != null && firePoint != null)
         {
-            GameObject fireblast = Instantiate(shootparticle, firePoint.position, firePoint.rotation);
+            currentAmmo--;
+            UpdateAmmoUI();
 
-            // Create bullet at fire point
+            GameObject fireblast = Instantiate(shootparticle, firePoint.position, firePoint.rotation);
             GameObject bullet = Instantiate(bulletPrefab, firePoint.position, firePoint.rotation);
 
-            // Add velocity to bullet
             Rigidbody bulletRb = bullet.GetComponent<Rigidbody>();
             if (bulletRb != null)
             {
@@ -324,17 +353,17 @@ public class MoveTank : MonoBehaviour
 
             Destroy(fireblast, 1.0f);
 
-            //// Destroy bullet after 5 seconds to prevent memory issues
-            //Destroy(bullet, 5.0f);
-
-            // Optional: Add muzzle flash effect here
-            // Optional: Add shooting sound effect here
+            if (currentAmmo <= 0)
+            {
+                GameOver();
+            }
         }
         else
         {
             Debug.LogWarning("Bullet prefab or fire point not assigned!");
         }
     }
+
 
     void MoveTankObj(float input)
     {
