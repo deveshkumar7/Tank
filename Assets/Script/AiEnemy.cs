@@ -121,7 +121,7 @@ public class AITankFSM : MonoBehaviour
 
         UpdateAmmoReloadUI();
 
-        // Configure NavMeshAgent
+        // NavMeshAgent
         navAgent.speed = moveSpeed;
         navAgent.angularSpeed = rotationSpeed;
         navAgent.acceleration = 8.0f;
@@ -209,7 +209,7 @@ public class AITankFSM : MonoBehaviour
 
     void UpdateFSM()
     {
-        // Store time since last state change
+        // Store time 
         float timeSinceStateChange = Time.time - stateChangeTime;
 
         switch (currentState)
@@ -248,7 +248,7 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Normal patrol behavior
+        // Normal behavior
         float distanceToPatrol = Vector3.Distance(transform.position, targetPatrolPoint);
 
         if (distanceToPatrol > 1.0f)

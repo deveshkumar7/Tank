@@ -19,26 +19,26 @@ public class AIMulti : MonoBehaviour
     public float slowTurnSpeedMultiplier = 0.3f;
 
     [Header("Sniper Settings")]
-    public float sniperRange = 50.0f; // Very long range
-    public float maxTrackingRange = 80.0f; // GPS tracking range
-    public float aimingTime = 2.0f; // Time to aim before shooting
-    public float repositionTime = 8.0f; // Time before changing position
+    public float sniperRange = 50.0f; 
+    public float maxTrackingRange = 80.0f; 
+    public float aimingTime = 2.0f; 
+    public float repositionTime = 8.0f; 
     public bool requireLineOfSightToShoot = true;
 
     [Header("Positioning")]
-    public float preferredSniperDistance = 40.0f; // Preferred distance from target
-    public float minSniperDistance = 25.0f; // Minimum distance from target
-    public float repositionRadius = 30.0f; // Radius to search for new positions
-    public int positionSearchPoints = 12; // Number of positions to evaluate
-    public float heightAdvantageBonus = 5.0f; // Bonus for higher positions
+    public float preferredSniperDistance = 40.0f; 
+    public float minSniperDistance = 25.0f; 
+    public float repositionRadius = 30.0f; 
+    public int positionSearchPoints = 12; 
+    public float heightAdvantageBonus = 5.0f; 
 
     [Header("Combat Settings")]
     public GameObject bulletPrefab;
-    public Transform[] firePoints; // Multiple fire points for burst fire
+    public Transform[] firePoints;
     public float timeBetweenShots = 3.0f;
-    public float timeBetweenBursts = 0.2f; // Time between bullets in a burst
-    public int bulletsPerBurst = 3; // Number of bullets per burst
-    public int maxAmmo = 24; // Increased for burst fire
+    public float timeBetweenBursts = 0.2f; 
+    public int bulletsPerBurst = 3; 
+    public int maxAmmo = 24; 
     public float reloadTime = 4.0f;
     public float bulletDamage = 50f;
     public bool useBurstFire = true;
@@ -47,16 +47,16 @@ public class AIMulti : MonoBehaviour
     public bool useProjectilePhysics = true;
     public float minBulletSpeed = 15.0f;
     public float maxBulletSpeed = 50.0f;
-    public float gravityScale = 1.0f; // Multiplier for Physics.gravity
+    public float gravityScale = 1.0f; 
     public bool predictPlayerMovement = true;
-    public float predictionTime = 1.5f; // How far ahead to predict player movement
+    public float predictionTime = 1.5f; 
 
     [Header("Positioning Preferences")]
     public LayerMask groundLayerMask = -1;
     public LayerMask obstacleLayerMask = -1;
     public float coverSearchRadius = 25.0f;
     public bool preferHighGround = true;
-    public float minPositionDistance = 5.0f; // Minimum distance between positions
+    public float minPositionDistance = 5.0f; 
 
     [Header("GPS Visualization")]
     public bool showSniperRange = true;
@@ -69,15 +69,15 @@ public class AIMulti : MonoBehaviour
     // FSM States
     public enum SniperState
     {
-        Positioning,    // Moving to a good sniper position
-        Aiming,        // Aiming at target
-        Shooting,      // Taking the shot
-        Relocating,    // Moving to new position after shooting
-        Reloading,     // Out of ammo, reloading while finding cover
-        Hunting        // GPS tracking but no line of sight
+        Positioning,    
+        Aiming,        
+        Shooting,      
+        Relocating,    
+        Reloading,      
+        Hunting        
     }
 
-    // Private variables
+    
     private SniperState currentState;
     private SniperState previousState;
     private NavMeshAgent navAgent;
@@ -89,7 +89,7 @@ public class AIMulti : MonoBehaviour
     private float lastShotTime;
     private float stateChangeTime;
 
-    // GPS tracking variables
+    
     private Vector3 playerGPSPosition;
     private Vector3 predictedPlayerPosition;
     private float lastGPSUpdate;
@@ -98,7 +98,7 @@ public class AIMulti : MonoBehaviour
     private Vector3 lastPlayerPosition;
     private Vector3 playerVelocity;
 
-    // Combat variables
+    
     private int currentAmmo;
     private bool isReloading;
     private float reloadTimer;
@@ -109,12 +109,12 @@ public class AIMulti : MonoBehaviour
     private float burstTimer;
     private Coroutine firingCoroutine;
 
-    // Positioning variables
+    
     private List<Vector3> evaluatedPositions;
     private Vector3 bestSniperPosition;
     private float bestPositionScore;
 
-    // Movement tracking for realistic wheel rotation
+    //Track Player Movemnet
     private Vector3 lastPosition;
     private float lastRotationY;
     private float currentForwardSpeed;
@@ -127,11 +127,11 @@ public class AIMulti : MonoBehaviour
     private bool hasValidTrajectory;
     private List<Vector3> trajectoryPoints;
 
-    // Reloading movement variables
+    
     private float reloadMoveTimer;
     private Vector3 reloadMoveTarget;
     private bool isReloadMoving;
-    private float reloadMoveInterval = 1.5f; // Change direction every 1.5 seconds while reloading
+    private float reloadMoveInterval = 2f; 
 
     [Header("Health Settings")]
     public float maxHealth = 80f;
@@ -168,14 +168,14 @@ public class AIMulti : MonoBehaviour
         isReloadMoving = false;
         reloadMoveTimer = 0f;
 
-        // Initialize GPS system
+        // Track
         hasGPSLock = false;
         lastGPSUpdate = 0f;
         lastPlayerPosition = player != null ? player.position : Vector3.zero;
 
         UpdateAmmoReloadUI();
 
-        // Configure NavMeshAgent
+        // NavMeshAgent
         navAgent.speed = moveSpeed;
         navAgent.angularSpeed = rotationSpeed;
         navAgent.acceleration = 6.0f;
@@ -374,8 +374,8 @@ public class AIMulti : MonoBehaviour
             return;
         }
 
-        // Update GPS position and calculate player velocity
-        if (Time.time - lastGPSUpdate >= 0.1f) // More frequent updates for sniper
+        
+        if (Time.time - lastGPSUpdate >= 0.1f) 
         {
             Vector3 currentPlayerPos = player.position;
             playerVelocity = (currentPlayerPos - lastPlayerPosition) / (Time.time - lastGPSUpdate);
