@@ -209,7 +209,6 @@ public class AITankFSM : MonoBehaviour
 
     void UpdateFSM()
     {
-        // Store time 
         float timeSinceStateChange = Time.time - stateChangeTime;
 
         switch (currentState)
@@ -231,7 +230,7 @@ public class AITankFSM : MonoBehaviour
 
     void PatrolBehavior()
     {
-        // Priority 1: Check if out of ammo and need to flee
+        
         if (currentAmmo <= 0 && !isReloading)
         {
             StartReload();
@@ -239,7 +238,7 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Priority 2: Check for player detection
+
         if (CanSeePlayer())
         {
             lastKnownPlayerPosition = player.position;
@@ -248,7 +247,7 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Normal behavior
+        // Patrolling
         float distanceToPatrol = Vector3.Distance(transform.position, targetPatrolPoint);
 
         if (distanceToPatrol > 1.0f)
@@ -274,7 +273,7 @@ public class AITankFSM : MonoBehaviour
 
     void ChaseBehavior()
     {
-        // Priority 1: Check if out of ammo and need to flee
+        // check for ammo first
         if (currentAmmo <= 0 && !isReloading)
         {
             StartReload();
@@ -282,21 +281,20 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Priority 2: Check if still can see player
+        // check the visibility of the player
         if (!CanSeePlayer())
         {
-            // Lost sight, return to patrol
             ChangeState(AIState.Patrol);
             return;
         }
 
-        // Update last known player position
+        // player position update //where to go for attack
         lastKnownPlayerPosition = player.position;
         lastKnownPlayerTime = Time.time;
 
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
-        // Priority 3: Check if close enough to attack
+        // chekc if the player is in attack range
         if (distanceToPlayer <= attackRange)
         {
             ChangeState(AIState.Attack);
@@ -315,7 +313,7 @@ public class AITankFSM : MonoBehaviour
     {
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
-        // Priority 1: Check if out of ammo and need to flee
+        // check for ammo first
         if (currentAmmo <= 0 && !isReloading)
         {
             StartReload();
@@ -323,21 +321,21 @@ public class AITankFSM : MonoBehaviour
             return;
         }
 
-        // Priority 2: Check if can still see player
+        // check if player is visible
         if (!CanSeePlayer())
         {
             ChangeState(AIState.Patrol);
             return;
         }
 
-        // Priority 3: Check if player is too far
-        if (distanceToPlayer > attackRange * 1.2f) // Add hysteresis
+        // player is visible but not in attack range
+        if (distanceToPlayer > attackRange * 1.2f) 
         {
             ChangeState(AIState.Chase);
             return;
         }
 
-        // Stop and attack
+        // Stop and proceed to attack
         navAgent.isStopped = true;
         RotateTowardsTarget(player.position);
 
@@ -353,7 +351,6 @@ public class AITankFSM : MonoBehaviour
     {
         fleeTimer += Time.deltaTime;
 
-        // Ensure minimum flee time to avoid rapid state switching
         bool canExitFlee = timeSinceStateChange >= minFleeTime;
 
         // Find cover if needed
@@ -759,7 +756,7 @@ public class AITankFSM : MonoBehaviour
 
     bool CanFireAtPlayer()
     {
-        // Basic firing conditions
+        
         if (isReloading || currentAmmo <= 0 || Time.time - lastFireTime < timeBetweenBullets)
         {
             return false;
@@ -788,14 +785,6 @@ public class AITankFSM : MonoBehaviour
         // Check if player is within the firing cone
         bool withinAngle = angleToPlayer <= firingAngle;
 
-        if (withinAngle)
-        {
-            Debug.Log($"Player in firing cone! Angle: {angleToPlayer:F1}° (Max: {firingAngle}°)");
-        }
-        else
-        {
-            Debug.Log($"Player outside firing cone. Angle: {angleToPlayer:F1}° (Max: {firingAngle}°) - Still aiming...");
-        }
 
         return withinAngle;
     }
@@ -846,13 +835,13 @@ public class AITankFSM : MonoBehaviour
 
             Debug.Log($"Tank state changed from {previousState} to {newState}");
 
-            // Reset state-specific variables
+
             switch (newState)
             {
                 case AIState.Patrol:
                     patrolWaitTimer = 0f;
                     navAgent.speed = moveSpeed;
-                    // Ensure we have a valid patrol point
+                    
                     if (Vector3.Distance(targetPatrolPoint, transform.position) < 1f)
                     {
                         SetNewPatrolPoint();
@@ -872,7 +861,7 @@ public class AITankFSM : MonoBehaviour
                     break;
             }
 
-            // Ensure NavMeshAgent is not stopped when changing to movement states
+            // Ensure NavMeshAgent is not stopped when changing to states
             if (newState != AIState.Attack)
             {
                 navAgent.isStopped = false;
